@@ -1,0 +1,44 @@
+datasource db {
+  provider = "postgres"
+
+  // .envファイルからデータベースURLを読み込み
+  url = env("DATABASE_URL")
+}
+ 
+generator db {
+  provider = "go run github.com/steebchen/prisma-client-go"
+}
+ 
+model Stock {
+  id Int @id @unique @default(autoincrement())
+  category String
+  name String
+  start DateTime @db.Timestamptz()
+  end DateTime @db.Timestamptz()
+  interval String
+  value Int
+  default_num Int
+  num Int
+  state Boolean
+  note String
+}
+
+model Order {
+  id Int @id @unique @default(autoincrement())
+  customer Int
+  product Int
+  start DateTime @db.Timestamptz()
+  end DateTime @db.Timestamptz()
+  num Int
+  time DateTime @db.Timestamptz()
+  state Int
+  note String
+}
+
+model EditInfo {
+  id Int @id @unique @default(autoincrement())
+  table String
+  type Int
+  info Json
+  time DateTime @db.Timestamptz()
+}

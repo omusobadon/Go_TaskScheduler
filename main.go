@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
-
 func main() {
-	fmt.Println("test")
+	if err := scheduler(); err != nil {
+		panic(err)
+	}
 }
