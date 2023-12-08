@@ -1,4 +1,5 @@
-// 予約在庫情報をリセットするタスクスケジューラ
+// 在庫情報を監視するタスクスケジューラ
+// 現在はStockテーブルのEnd時刻と同期している
 package main
 
 import (
@@ -9,14 +10,13 @@ import (
 )
 
 // デフォルトの遅延時間(s)
-const delay int = 60
+const d int = 20
 
 func scheduler() error {
 	var cnt int
-	var flag bool
-	var d time.Duration = delay * time.Second
+	delay := time.Duration(d) * time.Second
 
-	fmt.Println("Scheduler started")
+	fmt.Println("Scheduler started. delay time :", delay)
 
 	// データベース接続用クライアントの作成
 	client := db.NewClient()
@@ -35,47 +35,52 @@ func scheduler() error {
 	for {
 		cnt++
 
-		// スケジューラでのメイン処理
-		if flag {
-			// Delete
-			_, err := client.Stock.FindUnique(
-				db.Stock.ID.Equals(*s.ID),
-			).Delete().Exec(ctx)
-			if err != nil {
-				return fmt.Errorf("在庫テーブル削除エラー : %w", err)
-			}
-		}
-
-		// Stockテーブルの内容を一括取得
-		stock, err := client.Stock.FindMany().Exec(ctx)
+		// Stockテーブルで、現在時刻よりも後の情報を取得
+		stock, err := client.Stock.FindMany(
+			db.Stock.End.After(GetTime()),
+		).Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("在庫テーブル取得エラー : %w", err)
 		}
 
-		// 比較用に時刻を設定
-		etime := stock[0].End
+		// 現在より後の情報がない場合
+		if len(stock) == 0 {
+			fmt.Printf("[cnt.%d] 更新予定なし\n", cnt)
+			time.Sleep(delay)
+			continue
+		}
+
+		// 比較用にStockテーブルの1行をセット
+		stock_one := stock[0]
 
 		for _, value := range stock {
 			// fmt.Printf("index : %d, value : %+v\n", index, value)
 
-			// 終了時刻がより早い場合はその時間をセット
-			if value.End.Before(etime) {
-				etime = value.End
+			// 終了時刻がより早い場合はその行を新たにセット
+			if value.End.Before(stock_one.End) {
+				stock_one = value
 			}
 		}
 
-		fmt.Println("etime :", etime)
-
 		// 現在時刻との間隔を求める
-		dtime := etime.Sub(GetTime())
-		fmt.Println(dtime)
+		duration := stock_one.End.Sub(GetTime())
 
-		// dtimeがdelayよりも早い場合
+		// durationがdelayよりも短い場合
 		// その間隔分遅延し、遅延後にタスク処理を実行
-		if dtime < d {
+		if duration < delay {
+			fmt.Printf("[cnt.%d] 更新実行: %v後...", cnt, duration)
+			time.Sleep(duration)
 
+			if err := task(client, stock_one); err != nil {
+				fmt.Println("エラー")
+				return fmt.Errorf("タスク実行エラー : %w", err)
+			} else {
+				fmt.Println("完了")
+			}
+
+		} else {
+			fmt.Printf("[cnt.%d] 次回更新: %v (%v後)\n", cnt, stock_one.End, duration)
+			time.Sleep(delay)
 		}
-
-		time.Sleep((d * 1) * time.Second)
 	}
 }
